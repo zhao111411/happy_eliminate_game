@@ -1,0 +1,424 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>开心消消乐</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            background-color: #f0f0f0;
+            margin: 0;
+            padding: 20px;
+        }
+        
+        h1 {
+            color: #333;
+            margin-bottom: 10px;
+        }
+        
+        .game-info {
+            display: flex;
+            justify-content: space-between;
+            width: 400px;
+            margin-bottom: 15px;
+            font-size: 18px;
+        }
+        
+        #score {
+            color: #e74c3c;
+            font-weight: bold;
+        }
+        
+        #game-board {
+            display: grid;
+            grid-template-columns: repeat(8, 50px);
+            gap: 5px;
+            background-color: #b3d9ff;
+            padding: 10px;
+            border-radius: 10px;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+        }
+        
+        .tile {
+            width: 50px;
+            height: 50px;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 24px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        .tile:hover {
+            transform: scale(1.05);
+            box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+        }
+        
+        .tile.selected {
+            transform: scale(0.95);
+            box-shadow: inset 0 0 10px rgba(0,0,0,0.3);
+        }
+        
+        .tile-1 { background-color: #ff6b6b; }
+        .tile-2 { background-color: #4ecdc4; }
+        .tile-3 { background-color: #45b7d1; }
+        .tile-4 { background-color: #ffcc5c; }
+        .tile-5 { background-color: #a77dc2; }
+        .tile-6 { background-color: #ff8b94; }
+        
+        .game-over {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0,0,0,0.7);
+            display: none;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 24px;
+        }
+        
+        .game-over button {
+            padding: 10px 20px;
+            font-size: 18px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            margin-top: 20px;
+        }
+        
+        .game-over button:hover {
+            background-color: #45a049;
+        }
+    </style>
+</head>
+<body>
+    <h1>开心消消乐</h1>
+    <div class="game-info">
+        <div>分数: <span id="score">0</span></div>
+        <div>时间: <span id="time">60</span>秒</div>
+    </div>
+    <div id="game-board"></div>
+    
+    <div class="game-over" id="gameOver">
+        <h2>游戏结束!</h2>
+        <p>你的最终得分: <span id="finalScore">0</span></p>
+        <button onclick="restartGame()">再来一局</button>
+    </div>
+
+    <script>
+        const BOARD_SIZE = 8; // 8x8的游戏板
+        const TILE_TYPES = 6; // 6种不同的方块
+        let gameBoard = [];
+        let score = 0;
+        let timeLeft = 60;
+        let timer;
+        let selectedTile = null;
+        
+        // 初始化游戏
+        function initGame() {
+            // 重置游戏状态
+            score = 0;
+            timeLeft = 60;
+            document.getElementById('score').textContent = '0';
+            document.getElementById('time').textContent = '60';
+            document.getElementById('gameOver').style.display = 'none';
+            
+            // 创建游戏板
+            createGameBoard();
+            
+            // 开始计时
+            if (timer) clearInterval(timer);
+            timer = setInterval(updateTime, 1000);
+        }
+        
+        // 创建游戏板
+        function createGameBoard() {
+            const boardElement = document.getElementById('game-board');
+            boardElement.innerHTML = '';
+            gameBoard = [];
+            
+            // 初始化游戏板数据
+            for (let row = 0; row < BOARD_SIZE; row++) {
+                gameBoard[row] = [];
+                for (let col = 0; col < BOARD_SIZE; col++) {
+                    // 确保不会初始就有可消除的组合
+                    let tileType;
+                    do {
+                        tileType = Math.floor(Math.random() * TILE_TYPES) + 1;
+                    } while (
+                        (col >= 2 && gameBoard[row][col-1] === tileType && gameBoard[row][col-2] === tileType) ||
+                        (row >= 2 && gameBoard[row-1][col] === tileType && gameBoard[row-2][col] === tileType)
+                    );
+                    
+                    gameBoard[row][col] = tileType;
+                    
+                    // 创建方块元素
+                    const tile = document.createElement('div');
+                    tile.className = `tile tile-${tileType}`;
+                    tile.dataset.row = row;
+                    tile.dataset.col = col;
+                    tile.innerHTML = getTileSymbol(tileType);
+                    tile.addEventListener('click', () => selectTile(row, col));
+                    boardElement.appendChild(tile);
+                }
+            }
+        }
+        
+        // 获取方块的符号
+        function getTileSymbol(type) {
+            const symbols = ['🍎', '🍐', '🍊', '🍇', '🍓', '🍒'];
+            return symbols[type - 1];
+        }
+        
+        // 选择方块
+        function selectTile(row, col) {
+            // 如果已经选中了一个方块，尝试交换
+            if (selectedTile) {
+                // 检查是否相邻
+                if (isAdjacent(selectedTile, {row, col})) {
+                    swapTiles(selectedTile.row, selectedTile.col, row, col);
+                    
+                    // 检查是否有可消除的组合
+                    if (checkMatches()) {
+                        // 有效交换，处理消除
+                        processMatches();
+                    } else {
+                        // 无效交换，交换回来
+                        setTimeout(() => {
+                            swapTiles(row, col, selectedTile.row, selectedTile.col);
+                        }, 300);
+                    }
+                }
+                
+                // 取消选中状态
+                const prevTile = document.querySelector(`.tile[data-row="${selectedTile.row}"][data-col="${selectedTile.col}"]`);
+                prevTile.classList.remove('selected');
+                selectedTile = null;
+            } else {
+                // 选中第一个方块
+                selectedTile = {row, col};
+                const tile = document.querySelector(`.tile[data-row="${row}"][data-col="${col}"]`);
+                tile.classList.add('selected');
+            }
+        }
+        
+        // 检查两个方块是否相邻
+        function isAdjacent(tile1, tile2) {
+            const rowDiff = Math.abs(tile1.row - tile2.row);
+            const colDiff = Math.abs(tile1.col - tile2.col);
+            return (rowDiff === 1 && colDiff === 0) || (rowDiff === 0 && colDiff === 1);
+        }
+        
+        // 交换两个方块
+        function swapTiles(row1, col1, row2, col2) {
+            // 交换数据
+            const temp = gameBoard[row1][col1];
+            gameBoard[row1][col1] = gameBoard[row2][col2];
+            gameBoard[row2][col2] = temp;
+            
+            // 更新UI
+            updateTileUI(row1, col1);
+            updateTileUI(row2, col2);
+        }
+        
+        // 更新方块的UI
+        function updateTileUI(row, col) {
+            const tile = document.querySelector(`.tile[data-row="${row}"][data-col="${col}"]`);
+            const type = gameBoard[row][col];
+            
+            // 移除所有类型类
+            for (let i = 1; i <= TILE_TYPES; i++) {
+                tile.classList.remove(`tile-${i}`);
+            }
+            
+            // 添加新的类型类和符号
+            tile.classList.add(`tile-${type}`);
+            tile.innerHTML = getTileSymbol(type);
+        }
+        
+        // 检查是否有可消除的组合
+        function checkMatches() {
+            // 检查水平方向
+            for (let row = 0; row < BOARD_SIZE; row++) {
+                for (let col = 0; col < BOARD_SIZE - 2; col++) {
+                    const type = gameBoard[row][col];
+                    if (type && gameBoard[row][col+1] === type && gameBoard[row][col+2] === type) {
+                        return true;
+                    }
+                }
+            }
+            
+            // 检查垂直方向
+            for (let col = 0; col < BOARD_SIZE; col++) {
+                for (let row = 0; row < BOARD_SIZE - 2; row++) {
+                    const type = gameBoard[row][col];
+                    if (type && gameBoard[row+1][col] === type && gameBoard[row+2][col] === type) {
+                        return true;
+                    }
+                }
+            }
+            
+            return false;
+        }
+        
+        // 处理消除
+        function processMatches() {
+            let matchesFound = false;
+            const matchedTiles = [];
+            
+            // 标记水平方向的匹配
+            for (let row = 0; row < BOARD_SIZE; row++) {
+                let col = 0;
+                while (col < BOARD_SIZE - 2) {
+                    const type = gameBoard[row][col];
+                    if (type && gameBoard[row][col+1] === type && gameBoard[row][col+2] === type) {
+                        let matchLength = 3;
+                        // 检查是否有更长的匹配
+                        while (col + matchLength < BOARD_SIZE && gameBoard[row][col + matchLength] === type) {
+                            matchLength++;
+                        }
+                        
+                        // 标记匹配的方块
+                        for (let i = 0; i < matchLength; i++) {
+                            matchedTiles.push({row, col: col + i});
+                        }
+                        
+                        col += matchLength;
+                        matchesFound = true;
+                    } else {
+                        col++;
+                    }
+                }
+            }
+            
+            // 标记垂直方向的匹配
+            for (let col = 0; col < BOARD_SIZE; col++) {
+                let row = 0;
+                while (row < BOARD_SIZE - 2) {
+                    const type = gameBoard[row][col];
+                    if (type && gameBoard[row+1][col] === type && gameBoard[row+2][col] === type) {
+                        let matchLength = 3;
+                        // 检查是否有更长的匹配
+                        while (row + matchLength < BOARD_SIZE && gameBoard[row + matchLength][col] === type) {
+                            matchLength++;
+                        }
+                        
+                        // 标记匹配的方块
+                        for (let i = 0; i < matchLength; i++) {
+                            matchedTiles.push({row: row + i, col});
+                        }
+                        
+                        row += matchLength;
+                        matchesFound = true;
+                    } else {
+                        row++;
+                    }
+                }
+            }
+            
+            // 如果有匹配的方块，消除它们并更新分数
+            if (matchesFound) {
+                // 计算得分 (每个方块10分)
+                score += matchedTiles.length * 10;
+                document.getElementById('score').textContent = score;
+                
+                // 移除匹配的方块 (设置为0)
+                matchedTiles.forEach(tile => {
+                    gameBoard[tile.row][tile.col] = 0;
+                    const element = document.querySelector(`.tile[data-row="${tile.row}"][data-col="${tile.col}"]`);
+                    element.style.opacity = '0';
+                    element.style.transform = 'scale(0)';
+                });
+                
+                // 等待动画完成后填充新方块并检查是否有连锁反应
+                setTimeout(() => {
+                    fillEmptySpaces();
+                    setTimeout(() => {
+                        if (checkMatches()) {
+                            processMatches(); // 递归处理连锁反应
+                        }
+                    }, 500);
+                }, 500);
+            }
+        }
+        
+        // 填充空白位置
+        function fillEmptySpaces() {
+            // 处理每一列
+            for (let col = 0; col < BOARD_SIZE; col++) {
+                // 下落现有方块
+                for (let row = BOARD_SIZE - 1; row >= 0; row--) {
+                    if (gameBoard[row][col] === 0) {
+                        // 找到上方第一个非零方块
+                        for (let aboveRow = row - 1; aboveRow >= 0; aboveRow--) {
+                            if (gameBoard[aboveRow][col] !== 0) {
+                                // 下落方块
+                                gameBoard[row][col] = gameBoard[aboveRow][col];
+                                gameBoard[aboveRow][col] = 0;
+                                updateTileUI(row, col);
+                                updateTileUI(aboveRow, col);
+                                break;
+                            }
+                        }
+                    }
+                }
+                
+                // 在顶部填充新方块
+                for (let row = 0; row < BOARD_SIZE; row++) {
+                    if (gameBoard[row][col] === 0) {
+                        gameBoard[row][col] = Math.floor(Math.random() * TILE_TYPES) + 1;
+                        updateTileUI(row, col);
+                    }
+                }
+            }
+            
+            // 重置所有方块的样式
+            document.querySelectorAll('.tile').forEach(tile => {
+                tile.style.opacity = '1';
+                tile.style.transform = 'scale(1)';
+            });
+        }
+        
+        // 更新剩余时间
+        function updateTime() {
+            timeLeft--;
+            document.getElementById('time').textContent = timeLeft;
+            
+            if (timeLeft <= 0) {
+                endGame();
+            }
+        }
+        
+        // 结束游戏
+        function endGame() {
+            clearInterval(timer);
+            document.getElementById('finalScore').textContent = score;
+            document.getElementById('gameOver').style.display = 'flex';
+        }
+        
+        // 重新开始游戏
+        function restartGame() {
+            initGame();
+        }
+        
+        // 启动游戏
+        window.onload = initGame;
+    </script>
+</body>
+</html>
+
+
+
